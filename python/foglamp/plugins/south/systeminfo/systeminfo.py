@@ -11,18 +11,12 @@ import asyncio
 import copy
 import uuid
 import datetime
-import os
-import glob
 import sys
-import shutil
-import json
-import fnmatch
 import subprocess
 import socket
 import fcntl
 import struct
 import array
-import sys
 
 from foglamp.services.core.connect import *
 from foglamp.common import logger
@@ -50,6 +44,11 @@ _DEFAULT_CONFIG = {
         'description': 'Sleep Interval, in seconds, between two System info gathering',
         'type': 'integer',
         'default': "30"
+    },
+    'networkSnifferPeriod': {
+        'description': 'Interval, in seconds, for which network traffic is measured',
+        'type': 'integer',
+        'default': "2"
     }
 }
 _LOGGER = logger.setup(__name__, level=20)
@@ -145,7 +144,7 @@ def plugin_start(handle):
             network_calc[interface_name]["bytes_recd_before"] = interface_transmission(interface_name, "rx")
             network_calc[interface_name]["bytes_sent_before"] = interface_transmission(interface_name, "tx")
 
-        timestep = int(handle['sleepInterval']['value'])  # seconds
+        timestep = int(handle['networkSnifferPeriod']['value'])  # seconds
         time.sleep(timestep)
 
         for interface_name, interface_ip in network_interfaces:
@@ -270,7 +269,7 @@ def plugin_start(handle):
                                           timestamp=data['timestamp'], key=data['key'],
                                           readings=data['readings'])
 
-                # await asyncio.sleep(int(handle['sleepInterval']['value']))
+                await asyncio.sleep(int(handle['sleepInterval']['value']))
 
         except asyncio.CancelledError:
             pass
