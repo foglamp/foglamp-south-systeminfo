@@ -164,17 +164,19 @@ def plugin_start(handle):
         return network_traffic
 
     def get_subprocess_result(cmd):
-        return subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.readlines()
+        a = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.readlines()
+        # Since "a" contains return value in bytes, convert it to string
+        c = [str(b, 'utf-8').replace('\n', '') for b in a]
+        return c
 
     def get_system_info():
         data = {}
-        hostname = str(get_subprocess_result(cmd='hostname')[0], 'utf-8').replace('\n', '')
+        hostname = get_subprocess_result(cmd='hostname')[0]
         data.update({
             "hostname": hostname
         })
 
-        load_average = get_subprocess_result(cmd='top -n1 -b')[:5]
-        c2 = [str(b, 'utf-8').replace('\n', '') for b in load_average]  # Since "load_average" contains return value in bytes, convert it to string
+        c2 = get_subprocess_result(cmd='top -n1 -b')[:5]
         data.update({
             "loadAverage": c2[0],
             "tasksRunning": c2[1],
@@ -183,9 +185,7 @@ def plugin_start(handle):
             "swapMemory": c2[4]
         })
 
-        df = get_subprocess_result(cmd='df')
-        c3 = [str(b, 'utf-8').replace('\n', '') for b in
-              df]  # Since "df" contains return value in bytes, convert it to string
+        c3 = get_subprocess_result(cmd='df')
         disk_usage = []
         col_heads = c3[0].split()
         for line in c3[1:]:
@@ -202,7 +202,7 @@ def plugin_start(handle):
             "diskUsage": disk_usage
         })
 
-        no_of_processes = str(get_subprocess_result(cmd='ps -eaf | wc -l')[0], 'utf-8').replace('\n', '')
+        no_of_processes = get_subprocess_result(cmd='ps -eaf | wc -l')[0]
         data.update({
             "numberOProcessesRunning": no_of_processes
         })
@@ -213,8 +213,7 @@ def plugin_start(handle):
         })
 
         # Paging and Swapping
-        vmstat = get_subprocess_result(cmd='vmstat -s')
-        c6 = [str(b, 'utf-8').replace('\n', '') for b in vmstat]  # Since "vmstat" contains return value in bytes, convert it to string
+        c6 = get_subprocess_result(cmd='vmstat -s')
         paging_swapping = []
         for line in c6:
             if 'page' in line:
@@ -224,8 +223,7 @@ def plugin_start(handle):
         })
 
         # Disk Traffic
-        iostat = get_subprocess_result(cmd='iostat')
-        c4 = [str(b, 'utf-8').replace('\n', '') for b in iostat]  # Since "iostat" contains return value in bytes, convert it to string
+        c4 = get_subprocess_result(cmd='iostat')
         c5 = c4[5:]
         disk_traffic = []
         col_heads = c5[0].split()
@@ -295,7 +293,8 @@ def plugin_reconfigure(handle, new_config):
     diff = utils.get_diff(handle, new_config)
 
     # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' in diff:
+    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' \
+                                                         '' in diff:
         new_handle = plugin_init(new_config)
         new_handle['restart'] = 'yes'
         _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
