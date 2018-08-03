@@ -223,8 +223,8 @@ def plugin_start(handle):
         })
 
         # Disk Traffic
-        c4 = get_subprocess_result(cmd='iostat')
-        c5 = c4[5:]
+        c4 = get_subprocess_result(cmd='iostat -xd 2 1')
+        c5 = c4[2:]
         disk_traffic = []
         col_heads = c5[0].split()
         for line in c5[1:]:
@@ -238,6 +238,14 @@ def plugin_start(handle):
                 col_heads[3]: col_vals[3],
                 col_heads[4]: col_vals[4],
                 col_heads[5]: col_vals[5],
+                col_heads[6]: col_vals[6],
+                col_heads[7]: col_vals[7],
+                col_heads[8]: col_vals[8],
+                col_heads[9]: col_vals[9],
+                col_heads[10]: col_vals[10],
+                col_heads[11]: col_vals[11],
+                col_heads[12]: col_vals[12],
+                col_heads[13]: col_vals[13]
             })
         data.update({
             "platform": c4[0],
