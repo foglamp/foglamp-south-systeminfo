@@ -51,7 +51,7 @@ _DEFAULT_CONFIG = {
         'default': "2"
     }
 }
-_LOGGER = logger.setup(__name__, level=20)
+_LOGGER = logger.setup(__name__)
 
 
 def plugin_info():
@@ -163,17 +163,18 @@ def plugin_start(handle):
             })
         return network_traffic
 
+    def get_subprocess_result(cmd):
+        return subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.readlines()
+
     def get_system_info():
         data = {}
-        hostname = str(subprocess.Popen('hostname', shell=True, stdout=subprocess.PIPE).stdout.readlines()[0],
-                       'utf-8').replace('\n', '')
+        hostname = str(get_subprocess_result(cmd='hostname')[0], 'utf-8').replace('\n', '')
         data.update({
             "hostname": hostname
         })
 
-        load_average = subprocess.Popen('top -n1 -b', shell=True, stdout=subprocess.PIPE).stdout.readlines()[:5]
-        c2 = [str(b, 'utf-8').replace('\n', '') for b in
-              load_average]  # Since "load_average" contains return value in bytes, convert it to string
+        load_average = get_subprocess_result(cmd='top -n1 -b')[:5]
+        c2 = [str(b, 'utf-8').replace('\n', '') for b in load_average]  # Since "load_average" contains return value in bytes, convert it to string
         data.update({
             "loadAverage": c2[0],
             "tasksRunning": c2[1],
@@ -182,7 +183,7 @@ def plugin_start(handle):
             "swapMemory": c2[4]
         })
 
-        df = subprocess.Popen('df', shell=True, stdout=subprocess.PIPE).stdout.readlines()
+        df = get_subprocess_result(cmd='df')
         c3 = [str(b, 'utf-8').replace('\n', '') for b in
               df]  # Since "df" contains return value in bytes, convert it to string
         disk_usage = []
@@ -201,9 +202,7 @@ def plugin_start(handle):
             "diskUsage": disk_usage
         })
 
-        no_of_processes = str(
-            subprocess.Popen('ps -eaf | wc -l', shell=True, stdout=subprocess.PIPE).stdout.readlines()[0],
-            'utf-8').replace('\n', '')
+        no_of_processes = str(get_subprocess_result(cmd='ps -eaf | wc -l')[0], 'utf-8').replace('\n', '')
         data.update({
             "numberOProcessesRunning": no_of_processes
         })
@@ -214,9 +213,8 @@ def plugin_start(handle):
         })
 
         # Paging and Swapping
-        vmstat = subprocess.Popen('vmstat -s', shell=True, stdout=subprocess.PIPE).stdout.readlines()
-        c6 = [str(b, 'utf-8').replace('\n', '') for b in
-              vmstat]  # Since "vmstat" contains return value in bytes, convert it to string
+        vmstat = get_subprocess_result(cmd='vmstat -s')
+        c6 = [str(b, 'utf-8').replace('\n', '') for b in vmstat]  # Since "vmstat" contains return value in bytes, convert it to string
         paging_swapping = []
         for line in c6:
             if 'page' in line:
@@ -226,9 +224,8 @@ def plugin_start(handle):
         })
 
         # Disk Traffic
-        iostat = subprocess.Popen('iostat', shell=True, stdout=subprocess.PIPE).stdout.readlines()
-        c4 = [str(b, 'utf-8').replace('\n', '') for b in
-              iostat]  # Since "iostat" contains return value in bytes, convert it to string
+        iostat = get_subprocess_result(cmd='iostat')
+        c4 = [str(b, 'utf-8').replace('\n', '') for b in iostat]  # Since "iostat" contains return value in bytes, convert it to string
         c5 = c4[5:]
         disk_traffic = []
         col_heads = c5[0].split()
@@ -253,9 +250,7 @@ def plugin_start(handle):
     async def save_data():
         try:
             while True:
-                # TODO: Use utils.local_timestamp() and this will be used once v1.3 debian package release
-                # https://github.com/foglamp/FogLAMP/commit/66dead988152cd3724eba6b4288b630cfa6a2e30
-                time_stamp = str(datetime.datetime.now(datetime.timezone.utc).astimezone())  # utils.local_timestamp()
+                time_stamp = utils.local_timestamp()
                 data = {
                     'asset': 'systeminfo',
                     'timestamp': time_stamp,
@@ -300,12 +295,12 @@ def plugin_reconfigure(handle, new_config):
     diff = utils.get_diff(handle, new_config)
 
     # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetCode' in diff:
+    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' in diff:
         new_handle = plugin_init(new_config)
         new_handle['restart'] = 'yes'
         _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
     else:
-        new_handle = copy.deepcopy(handle)
+        new_handle = copy.deepcopy(new_config)
         new_handle['restart'] = 'no'
     return new_handle
 

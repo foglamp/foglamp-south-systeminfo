@@ -38,4 +38,4 @@ add_service () {
 
 set_files_ownership
 add_service
-echo "Sinusoid plugin is installed."
+echo "System Info plugin is installed."
