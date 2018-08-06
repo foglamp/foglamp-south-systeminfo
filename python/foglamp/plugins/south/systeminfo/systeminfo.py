@@ -186,12 +186,12 @@ def plugin_start(handle):
         # Get uptime, load, tasks, cpu usage, memory, swap memory information
         c2 = get_subprocess_result(cmd='top -n1 -b')[:5]
         top_line = list_search("top - ", c2)
-        top_line_user_start = (top_line.find('user') + 1) * -1
+        top_line_user_start = top_line.find('user') - 3
         top_line_load_start = top_line.find('load average: ') + len('load average: ')
-        top_line_load = top_line[top_line_load_start:].split()
+        top_line_load = top_line[top_line_load_start:].split(',')
         load_average = {
                 "uptime": top_line[0],
-                "user(s)": int(top_line[top_line_user_start:3].strip()),
+                "user(s)": int(top_line[top_line_user_start:][:3].strip()),
                 "loadAverageOverLast1min": float(top_line_load[0].strip()),
                 "loadAverageOverLast5mins": float(top_line_load[1].strip()),
                 "loadAverageOverLast15mins": float(top_line_load[2].strip())
