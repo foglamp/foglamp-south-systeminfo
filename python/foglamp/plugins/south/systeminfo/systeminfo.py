@@ -186,9 +186,9 @@ def plugin_start(handle):
         load_average = {
                 "uptime": top_line[0]+', '+top_line[1],
                 "user(s)": int((top_line[2].strip().split())[0]),
-                "loadAverageOveLast1min": float((top_line[3])[-5:].strip()),
-                "loadAverageOveLast5min": float(top_line[4]),
-                "loadAverageOveLast15min": float(top_line[5])
+                "loadAverageOverLast1min": float((top_line[3])[-5:].strip()),
+                "loadAverageOverLast5min": float(top_line[4]),
+                "loadAverageOverLast15min": float(top_line[5])
         }
 
         tasks_line = list_search("Tasks: ", c2).split(',')
