@@ -10,7 +10,6 @@ import time
 import asyncio
 import copy
 import uuid
-import datetime
 import sys
 import subprocess
 import socket
@@ -18,7 +17,6 @@ import fcntl
 import struct
 import array
 
-from foglamp.services.core.connect import *
 from foglamp.common import logger
 from foglamp.plugins.common import utils
 from foglamp.services.south import exceptions
@@ -51,7 +49,7 @@ _DEFAULT_CONFIG = {
         'default': "2"
     }
 }
-_LOGGER = logger.setup(__name__)
+_LOGGER = logger.setup(__name__, level=logger.logging.INFO)
 
 
 def plugin_info():
@@ -97,8 +95,10 @@ def plugin_start(handle):
         TimeoutError
     """
     def get_network_traffic():
-        def all_interfaces():
-            """http: // code.activestate.com / recipes / 439093 /  # c8"""
+        def get_all_network_interfaces():
+            """ Get all network interfaces in a list of tuple interface name, interface ip.
+                This code was create with help from http://code.activestate.com/recipes/439093/#c8
+            """
             is_64bits = sys.maxsize > 2 ** 32
             struct_size = 40 if is_64bits else 32
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -136,8 +136,8 @@ def plugin_start(handle):
             f.close()
             return bytes_collected
 
-        network_interfaces = all_interfaces()
-        network_traffic = []
+        network_interfaces = get_all_network_interfaces()
+        network_traffic = {}
         network_calc = {}
         for interface_name, interface_ip in network_interfaces:
             network_calc[interface_name] = {}
@@ -152,13 +152,13 @@ def plugin_start(handle):
             network_calc[interface_name]["bytes_sent_after"] = interface_transmission(interface_name, "tx")
 
         for interface_name, interface_ip in network_interfaces:
-            network_traffic.append({
+            network_traffic.update({
                 interface_name: {
                     "IP": interface_ip,
-                    "numberOfNetworkPacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
-                                                      network_calc[interface_name]["bytes_recd_before"],
-                    "numberOfNetworkPacketsSent": network_calc[interface_name]["bytes_sent_after"] -
-                                                  network_calc[interface_name]["bytes_sent_before"],
+                    "networkPacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
+                                              network_calc[interface_name]["bytes_recd_before"],
+                    "networkPacketsSent": network_calc[interface_name]["bytes_sent_after"] -
+                                          network_calc[interface_name]["bytes_sent_before"],
                 }
             })
         return network_traffic
@@ -173,38 +173,79 @@ def plugin_start(handle):
         data = {}
         hostname = get_subprocess_result(cmd='hostname')[0]
         data.update({
-            "hostname": hostname
+            "hostName": hostname
         })
 
+        # Generic search a list for an item starting with the given string. Return item stripped of
+        # the search string if success else return None
+        list_search = lambda x, xlist: next((y[len(x):] for y in xlist if y.startswith(x)), None)
+
+        # Get uptime, load, tasks, cpu usage, memory, swap memory information
         c2 = get_subprocess_result(cmd='top -n1 -b')[:5]
+        top_line = list_search("top - ", c2).split(',')
+        load_average = {
+                "uptime": top_line[0]+', '+top_line[1],
+                "user(s)": int((top_line[2].strip().split())[0]),
+                "loadAverageOveLast1min": float((top_line[3])[-5:].strip()),
+                "loadAverageOveLast5min": float(top_line[4]),
+                "loadAverageOveLast15min": float(top_line[5])
+        }
+
+        tasks_line = list_search("Tasks: ", c2).split(',')
+        tasks = {}
+        for task in tasks_line:
+            t_item = task.split()
+            tasks.update({t_item[1]: int(t_item[0])})
+
+        cpus_line = list_search("%Cpu(s): ", c2).split(',')
+        cpus = {}
+        for cpu in cpus_line:
+            c_item = cpu.split()
+            cpus.update({c_item[1]: float(c_item[0])})
+
+        memories_line = list_search("KiB Mem : ", c2).split(',')
+        memories = {}
+        for memory in memories_line:
+            m_item = memory.split()
+            memories.update({m_item[1]: int(m_item[0])})
+
+        swaps_line = list_search("KiB Swap: ", c2).replace('.', ',').split(',')
+        swaps = {}
+        for swap in swaps_line:
+            s_item = swap.split()
+            swaps.update({s_item[1]: int(s_item[0])})
+
         data.update({
-            "loadAverage": c2[0],
-            "tasksRunning": c2[1],
-            "cpuUsage": c2[2],
-            "memoryUsage": c2[3],
-            "swapMemory": c2[4]
+            "loadAverage": load_average,
+            "tasksRunning": tasks,
+            "cpuUsage": cpus,
+            "memoryUsage(KB)": memories,
+            "swapMemory(KB)": swaps
         })
 
+        # Get disk usage
         c3 = get_subprocess_result(cmd='df')
-        disk_usage = []
+        disk_usage = {}
         col_heads = c3[0].split()
         for line in c3[1:]:
             col_vals = line.split()
-            disk_usage.append({
-                col_heads[0]: col_vals[0],
-                col_heads[1]: col_vals[1],
-                col_heads[2]: col_vals[2],
-                col_heads[3]: col_vals[3],
-                col_heads[4]: col_vals[4],
-                col_heads[5]: col_vals[5],
+            disk_usage.update({
+                col_vals[0]: {
+                    col_heads[1]: int(col_vals[1]),
+                    col_heads[2]: int(col_vals[2]),
+                    col_heads[3]: int(col_vals[3]),
+                    col_heads[4]: col_vals[4],
+                    col_heads[5]: col_vals[5],
+                }
             })
         data.update({
             "diskUsage": disk_usage
         })
 
+        # Get number of processes
         no_of_processes = get_subprocess_result(cmd='ps -eaf | wc -l')[0]
         data.update({
-            "numberOProcessesRunning": no_of_processes
+            "processesRunning": int(no_of_processes)
         })
 
         # Get Network and other info
@@ -214,41 +255,41 @@ def plugin_start(handle):
 
         # Paging and Swapping
         c6 = get_subprocess_result(cmd='vmstat -s')
-        paging_swapping = []
+        paging_swapping = {}
         for line in c6:
             if 'page' in line:
-                paging_swapping.append(line)
+                a_line = line.strip().split("pages")
+                paging_swapping.update({"pages{}".format(a_line[1]).replace(' ', ''): int(a_line[0])})
         data.update({
-            "numberOfPagingAndSwappingEvents": paging_swapping
+            "pagingAndSwappingEvents": paging_swapping
         })
 
         # Disk Traffic
         c4 = get_subprocess_result(cmd='iostat -xd 2 1')
-        c5 = c4[2:]
-        disk_traffic = []
+        c5 = [i for i in c4[1:] if i.strip() != '']  # Remove all empty lines
+        disk_traffic = {}
         col_heads = c5[0].split()
         for line in c5[1:]:
-            if line == '':
-                continue
             col_vals = line.split()
-            disk_traffic.append({
-                col_heads[0]: col_vals[0],
-                col_heads[1]: col_vals[1],
-                col_heads[2]: col_vals[2],
-                col_heads[3]: col_vals[3],
-                col_heads[4]: col_vals[4],
-                col_heads[5]: col_vals[5],
-                col_heads[6]: col_vals[6],
-                col_heads[7]: col_vals[7],
-                col_heads[8]: col_vals[8],
-                col_heads[9]: col_vals[9],
-                col_heads[10]: col_vals[10],
-                col_heads[11]: col_vals[11],
-                col_heads[12]: col_vals[12],
-                col_heads[13]: col_vals[13]
+            disk_traffic.update({
+                col_vals[0]: {
+                    col_heads[1]: float(col_vals[1]),
+                    col_heads[2]: float(col_vals[2]),
+                    col_heads[3]: float(col_vals[3]),
+                    col_heads[4]: float(col_vals[4]),
+                    col_heads[5]: float(col_vals[5]),
+                    col_heads[6]: float(col_vals[6]),
+                    col_heads[7]: float(col_vals[7]),
+                    col_heads[8]: float(col_vals[8]),
+                    col_heads[9]: float(col_vals[9]),
+                    col_heads[10]: float(col_vals[10]),
+                    col_heads[11]: float(col_vals[11]),
+                    col_heads[12]: float(col_vals[12]),
+                    col_heads[13]: float(col_vals[13])
+                }
             })
         data.update({
-            "platform": c4[0],
+            "platform": c4[0],  # Linux 4.15.0-29-generic (asinha-ThinkPad-E450) 	Monday 06 August 2018 	_x86_64_	(4 CPU)
             "diskTraffic": disk_traffic
         })
         return data
@@ -258,23 +299,19 @@ def plugin_start(handle):
             while True:
                 time_stamp = utils.local_timestamp()
                 data = {
-                    'asset': 'systeminfo',
+                    'asset': handle['assetCode']['value'],
                     'timestamp': time_stamp,
                     'key': str(uuid.uuid4()),
                     'readings': {
                         handle['assetCode']['value']: get_system_info()
                     }
                 }
-
                 await Ingest.add_readings(asset='{}'.format(data['asset']),
                                           timestamp=data['timestamp'], key=data['key'],
                                           readings=data['readings'])
-
                 await asyncio.sleep(int(handle['sleepInterval']['value']))
-
         except asyncio.CancelledError:
             pass
-
         except (Exception, RuntimeError) as ex:
             _LOGGER.exception("System Info exception: {}".format(str(ex)))
             raise exceptions.DataRetrievalError(ex)
@@ -301,8 +338,7 @@ def plugin_reconfigure(handle, new_config):
     diff = utils.get_diff(handle, new_config)
 
     # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' \
-                                                         '' in diff:
+    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' in diff:
         new_handle = plugin_init(new_config)
         new_handle['restart'] = 'yes'
         _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
