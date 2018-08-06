@@ -164,10 +164,13 @@ def plugin_start(handle):
         return network_traffic
 
     def get_subprocess_result(cmd):
-        a = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE).stdout.readlines()
-        # Since "a" contains return value in bytes, convert it to string
-        c = [str(b, 'utf-8').replace('\n', '') for b in a]
-        return c
+        a = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        outs, errs = a.communicate()
+        if a.returncode != 0:
+            raise OSError(
+                'Error in executing command "{}". Error: {}'.format(cmd, errs.decode('utf-8').replace('\n', '')))
+        d = [b for b in outs.decode('utf-8').split('\n') if b != '']
+        return d
 
     def get_system_info():
         data = {}
@@ -187,8 +190,8 @@ def plugin_start(handle):
                 "uptime": top_line[0]+', '+top_line[1],
                 "user(s)": int((top_line[2].strip().split())[0]),
                 "loadAverageOverLast1min": float((top_line[3])[-5:].strip()),
-                "loadAverageOverLast5min": float(top_line[4]),
-                "loadAverageOverLast15min": float(top_line[5])
+                "loadAverageOverLast5mins": float(top_line[4]),
+                "loadAverageOverLast15mins": float(top_line[5])
         }
 
         tasks_line = list_search("Tasks: ", c2).split(',')
@@ -226,8 +229,8 @@ def plugin_start(handle):
         # Get disk usage
         c3 = get_subprocess_result(cmd='df')
         disk_usage = {}
-        col_heads = c3[0].split()
-        for line in c3[1:]:
+        col_heads = c3[0].split()  # first line is the header row
+        for line in c3[1:]:  # second line onwards are value rows
             col_vals = line.split()
             disk_usage.update({
                 col_vals[0]: {
@@ -268,11 +271,11 @@ def plugin_start(handle):
         c4 = get_subprocess_result(cmd='iostat -xd 2 1')
         c5 = [i for i in c4[1:] if i.strip() != '']  # Remove all empty lines
         disk_traffic = {}
-        col_heads = c5[0].split()
-        for line in c5[1:]:
+        col_heads = c5[0].split()  # first line is header row
+        for line in c5[1:]:  # second line onwards are value rows
             col_vals = line.split()
             disk_traffic.update({
-                col_vals[0]: {
+                col_vals[0]: {  # e.g. sda etc
                     col_heads[1]: float(col_vals[1]),
                     col_heads[2]: float(col_vals[2]),
                     col_heads[3]: float(col_vals[3]),
@@ -310,6 +313,8 @@ def plugin_start(handle):
                                           timestamp=data['timestamp'], key=data['key'],
                                           readings=data['readings'])
                 await asyncio.sleep(int(handle['sleepInterval']['value']))
+        except OSError as ex:
+            _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
         except asyncio.CancelledError:
             pass
         except (Exception, RuntimeError) as ex:
