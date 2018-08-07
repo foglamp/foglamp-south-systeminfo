@@ -174,59 +174,88 @@ def plugin_start(handle):
 
     def get_system_info():
         data = {}
+
+        # Get hostname
         hostname = get_subprocess_result(cmd='hostname')[0]
         data.update({
             "hostName": hostname
         })
 
-        # Generic search a list for an item starting with the given string. Return item stripped of
-        # the search string if success else return None
-        list_search = lambda x, xlist: next((y[len(x):] for y in xlist if y.startswith(x)), None)
-
-        # Get uptime, load, tasks, cpu usage, memory, swap memory information
-        c2 = get_subprocess_result(cmd='top -n1 -b')[:5]
-        top_line = list_search("top - ", c2)
-        top_line_user_start = top_line.find('user') - 3
-        top_line_load_start = top_line.find('load average: ') + len('load average: ')
-        top_line_load = top_line[top_line_load_start:].split(',')
-        load_average = {
-                "uptime": top_line[0],
-                "user(s)": int(top_line[top_line_user_start:][:3].strip()),
-                "loadAverageOverLast1min": float(top_line_load[0].strip()),
-                "loadAverageOverLast5mins": float(top_line_load[1].strip()),
-                "loadAverageOverLast15mins": float(top_line_load[2].strip())
-        }
-
-        tasks_line = list_search("Tasks: ", c2).split(',')
-        tasks = {}
-        for task in tasks_line:
-            t_item = task.split()
-            tasks.update({t_item[1]: int(t_item[0])})
-
-        cpus_line = list_search("%Cpu(s): ", c2).split(',')
-        cpus = {}
-        for cpu in cpus_line:
-            c_item = cpu.split()
-            cpus.update({c_item[1]: float(c_item[0])})
-
-        memories_line = list_search("KiB Mem : ", c2).split(',')
-        memories = {}
-        for memory in memories_line:
-            m_item = memory.split()
-            memories.update({m_item[1]: int(m_item[0])})
-
-        swaps_line = list_search("KiB Swap: ", c2).replace('.', ',').split(',')
-        swaps = {}
-        for swap in swaps_line:
-            s_item = swap.split()
-            swaps.update({s_item[1]: int(s_item[0])})
-
+        # Get platform info
+        platform = get_subprocess_result(cmd='cat /proc/version')[0]
         data.update({
-            "loadAverage": load_average,
-            "tasksRunning": tasks,
-            "cpuUsage": cpus,
-            "memoryUsage(KB)": memories,
-            "swapMemory(KB)": swaps
+            "platform": platform
+        })
+
+        # Get uptime, users
+        uptime = get_subprocess_result(cmd='uptime')[0]
+        uptime_info = uptime.split(',')[0]
+        uptime_user_start = uptime.find('user') - 3
+        data.update({
+            "uptime": uptime_info.strip(),
+            "user(s)": int(uptime[uptime_user_start:][:3].strip()),
+        })
+
+        # Get load average
+        line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
+        load_average = {
+                "loadAverageOverLast1min": float(line_load[0].strip()),
+                "loadAverageOverLast5mins": float(line_load[1].strip()),
+                "loadAverageOverLast15mins": float(line_load[2].strip())
+        }
+        data.update({
+            "loadAverage": load_average
+        })
+
+        # Get processes count
+        tasks_states = get_subprocess_result(cmd="ps -e -o state")
+        processes = {
+                "running": tasks_states.count("R"),
+                "sleeping": tasks_states.count("S") + tasks_states.count("D"),
+                "stopped": tasks_states.count("T") + tasks_states.count("t"),
+                "paging": tasks_states.count("W"),
+                "dead": tasks_states.count("X"),
+                "zombie": tasks_states.count("Z")
+            }
+        data.update({
+            "processes": processes
+        })
+
+        # Get CPU usage
+        c3_mpstat = get_subprocess_result(cmd='mpstat')
+        cpu_usage = {}
+        col_heads = c3_mpstat[1].split()  # first line is the header row
+        for line in c3_mpstat[2:]:  # second line onwards are value rows
+            col_vals = line.split()
+            cpu_usage.update({
+                col_vals[2]: {
+                    col_heads[3]: float(col_vals[3].strip()),
+                    col_heads[4]: float(col_vals[4].strip()),
+                    col_heads[5]: float(col_vals[5].strip()),
+                    col_heads[6]: float(col_vals[6].strip()),
+                    col_heads[7]: float(col_vals[7].strip()),
+                    col_heads[8]: float(col_vals[8].strip()),
+                    col_heads[9]: float(col_vals[9].strip()),
+                    col_heads[10]: float(col_vals[10].strip()),
+                    col_heads[11]: float(col_vals[11].strip()),
+                    col_heads[12]: float(col_vals[12].strip()),
+                }
+            })
+        data.update({
+            "cpuUsage": cpu_usage
+        })
+
+        # Get memory info
+        c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
+        mem_info = {}
+        for line in c3_mem:
+            line_a = line.split(':')
+            line_vals = line_a[1].split()
+            k = "{} {}".format(line_a[0], 'KB' if len(line_vals) > 1 else '').strip()
+            v = int(line_vals[0].strip())
+            mem_info.update({k : v})
+        data.update({
+            "memInfo": mem_info
         })
 
         # Get disk usage
@@ -240,18 +269,12 @@ def plugin_start(handle):
                     col_heads[1]: int(col_vals[1]),
                     col_heads[2]: int(col_vals[2]),
                     col_heads[3]: int(col_vals[3]),
-                    col_heads[4]: col_vals[4],
+                    col_heads[4]: int(col_vals[4].replace("%", "").strip()),
                     col_heads[5]: col_vals[5],
                 }
             })
         data.update({
             "diskUsage": disk_usage
-        })
-
-        # Get number of processes
-        no_of_processes = get_subprocess_result(cmd='ps -eaf | wc -l')[0]
-        data.update({
-            "processesRunning": int(no_of_processes)
         })
 
         # Get Network and other info
@@ -295,9 +318,9 @@ def plugin_start(handle):
                 }
             })
         data.update({
-            "platform": c4[0],  # Linux 4.15.0-29-generic (asinha-ThinkPad-E450) 	Monday 06 August 2018 	_x86_64_	(4 CPU)
             "diskTraffic": disk_traffic
         })
+
         return data
 
     async def save_data():
