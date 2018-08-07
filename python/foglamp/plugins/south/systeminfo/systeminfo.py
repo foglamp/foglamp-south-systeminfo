@@ -154,9 +154,9 @@ def plugin_start(handle):
         for interface_name, interface_ip in network_interfaces:
             network_traffic = {
                     "IP": interface_ip,
-                    "networkPacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
+                    "PacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
                                               network_calc[interface_name]["bytes_recd_before"],
-                    "networkPacketsSent": network_calc[interface_name]["bytes_sent_after"] -
+                    "PacketsSent": network_calc[interface_name]["bytes_sent_after"] -
                                           network_calc[interface_name]["bytes_sent_before"],
             }
             await insert_reading("networkTraffic/"+interface_name, time_stamp, network_traffic)
@@ -193,9 +193,9 @@ def plugin_start(handle):
         # Get load average
         line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
         load_average = {
-                "loadAverageOverLast1min": float(line_load[0].strip()),
-                "loadAverageOverLast5mins": float(line_load[1].strip()),
-                "loadAverageOverLast15mins": float(line_load[2].strip())
+                "overLast1min": float(line_load[0].strip()),
+                "overLast5mins": float(line_load[1].strip()),
+                "overLast15mins": float(line_load[2].strip())
         }
         await insert_reading("loadAverage", time_stamp, load_average)
 
@@ -255,7 +255,8 @@ def plugin_start(handle):
                     col_heads[4]: int(col_vals[4].replace("%", "").strip()),
                     col_heads[5]: col_vals[5],
             })
-            await insert_reading("diskUsage/"+col_vals[0], time_stamp, disk_usage)
+            dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
+            await insert_reading("diskUsage/"+dev_key, time_stamp, disk_usage)
 
         # Get Network and other info
         await get_network_traffic(time_stamp)
@@ -266,7 +267,7 @@ def plugin_start(handle):
         for line in c6:
             if 'page' in line:
                 a_line = line.strip().split("pages")
-                paging_swapping.update({"pages{}".format(a_line[1]).replace(' ', ''): int(a_line[0])})
+                paging_swapping.update({a_line[1].replace(' ', ''): int(a_line[0])})
         await insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
 
         # Disk Traffic
