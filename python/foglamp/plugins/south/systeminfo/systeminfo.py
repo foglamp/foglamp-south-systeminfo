@@ -94,7 +94,7 @@ def plugin_start(handle):
     Raises:
         TimeoutError
     """
-    def get_network_traffic():
+    async def get_network_traffic(time_stamp):
         def get_all_network_interfaces():
             """ Get all network interfaces in a list of tuple interface name, interface ip.
                 This code was create with help from http://code.activestate.com/recipes/439093/#c8
@@ -152,15 +152,15 @@ def plugin_start(handle):
             network_calc[interface_name]["bytes_sent_after"] = interface_transmission(interface_name, "tx")
 
         for interface_name, interface_ip in network_interfaces:
-            network_traffic.update({
-                interface_name: {
+            network_traffic = {
                     "IP": interface_ip,
                     "networkPacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
                                               network_calc[interface_name]["bytes_recd_before"],
                     "networkPacketsSent": network_calc[interface_name]["bytes_sent_after"] -
                                           network_calc[interface_name]["bytes_sent_before"],
-                }
-            })
+            }
+            await insert_reading("networkTraffic/"+interface_name, time_stamp, network_traffic)
+
         return network_traffic
 
     def get_subprocess_result(cmd):
@@ -172,29 +172,23 @@ def plugin_start(handle):
         d = [b for b in outs.decode('utf-8').split('\n') if b != '']
         return d
 
-    def get_system_info():
+    async def get_system_info(time_stamp):
         data = {}
 
         # Get hostname
         hostname = get_subprocess_result(cmd='hostname')[0]
-        data.update({
-            "hostName": hostname
-        })
+        await insert_reading("hostName", time_stamp, {"hostName": hostname})
 
         # Get platform info
         platform = get_subprocess_result(cmd='cat /proc/version')[0]
-        data.update({
-            "platform": platform
-        })
+        await insert_reading("platform", time_stamp, {"platform": platform})
 
         # Get uptime, users
         uptime = get_subprocess_result(cmd='uptime')[0]
         uptime_info = uptime.split(',')[0]
         uptime_user_start = uptime.find('user') - 3
-        data.update({
-            "uptime": uptime_info.strip(),
-            "user(s)": int(uptime[uptime_user_start:][:3].strip()),
-        })
+        await insert_reading("uptime", time_stamp, {"uptime": uptime_info.strip()})
+        await insert_reading("users", time_stamp, {"users": int(uptime[uptime_user_start:][:3].strip())})
 
         # Get load average
         line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
@@ -203,9 +197,7 @@ def plugin_start(handle):
                 "loadAverageOverLast5mins": float(line_load[1].strip()),
                 "loadAverageOverLast15mins": float(line_load[2].strip())
         }
-        data.update({
-            "loadAverage": load_average
-        })
+        await insert_reading("loadAverage", time_stamp, load_average)
 
         # Get processes count
         tasks_states = get_subprocess_result(cmd="ps -e -o state")
@@ -217,9 +209,7 @@ def plugin_start(handle):
                 "dead": tasks_states.count("X"),
                 "zombie": tasks_states.count("Z")
             }
-        data.update({
-            "processes": processes
-        })
+        await insert_reading("processes", time_stamp, processes)
 
         # Get CPU usage
         c3_mpstat = get_subprocess_result(cmd='mpstat')
@@ -228,7 +218,6 @@ def plugin_start(handle):
         for line in c3_mpstat[2:]:  # second line onwards are value rows
             col_vals = line.split()
             cpu_usage.update({
-                col_vals[2]: {
                     col_heads[3]: float(col_vals[3].strip()),
                     col_heads[4]: float(col_vals[4].strip()),
                     col_heads[5]: float(col_vals[5].strip()),
@@ -239,11 +228,8 @@ def plugin_start(handle):
                     col_heads[10]: float(col_vals[10].strip()),
                     col_heads[11]: float(col_vals[11].strip()),
                     col_heads[12]: float(col_vals[12].strip()),
-                }
             })
-        data.update({
-            "cpuUsage": cpu_usage
-        })
+            await insert_reading("cpuUsage/"+col_vals[2], time_stamp, cpu_usage)
 
         # Get memory info
         c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
@@ -254,33 +240,25 @@ def plugin_start(handle):
             k = "{} {}".format(line_a[0], 'KB' if len(line_vals) > 1 else '').strip()
             v = int(line_vals[0].strip())
             mem_info.update({k : v})
-        data.update({
-            "memInfo": mem_info
-        })
+        await insert_reading("memInfo", time_stamp, mem_info)
 
         # Get disk usage
         c3 = get_subprocess_result(cmd='df')
-        disk_usage = {}
         col_heads = c3[0].split()  # first line is the header row
         for line in c3[1:]:  # second line onwards are value rows
             col_vals = line.split()
+            disk_usage = {}
             disk_usage.update({
-                col_vals[0]: {
                     col_heads[1]: int(col_vals[1]),
                     col_heads[2]: int(col_vals[2]),
                     col_heads[3]: int(col_vals[3]),
                     col_heads[4]: int(col_vals[4].replace("%", "").strip()),
                     col_heads[5]: col_vals[5],
-                }
             })
-        data.update({
-            "diskUsage": disk_usage
-        })
+            await insert_reading("diskUsage/"+col_vals[0], time_stamp, disk_usage)
 
         # Get Network and other info
-        data.update({
-            "networkTraffic": get_network_traffic()
-        })
+        await get_network_traffic(time_stamp)
 
         # Paging and Swapping
         c6 = get_subprocess_result(cmd='vmstat -s')
@@ -289,19 +267,16 @@ def plugin_start(handle):
             if 'page' in line:
                 a_line = line.strip().split("pages")
                 paging_swapping.update({"pages{}".format(a_line[1]).replace(' ', ''): int(a_line[0])})
-        data.update({
-            "pagingAndSwappingEvents": paging_swapping
-        })
+        await insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
 
         # Disk Traffic
         c4 = get_subprocess_result(cmd='iostat -xd 2 1')
         c5 = [i for i in c4[1:] if i.strip() != '']  # Remove all empty lines
-        disk_traffic = {}
         col_heads = c5[0].split()  # first line is header row
         for line in c5[1:]:  # second line onwards are value rows
             col_vals = line.split()
+            disk_traffic = {}
             disk_traffic.update({
-                col_vals[0]: {  # e.g. sda etc
                     col_heads[1]: float(col_vals[1]),
                     col_heads[2]: float(col_vals[2]),
                     col_heads[3]: float(col_vals[3]),
@@ -315,29 +290,26 @@ def plugin_start(handle):
                     col_heads[11]: float(col_vals[11]),
                     col_heads[12]: float(col_vals[12]),
                     col_heads[13]: float(col_vals[13])
-                }
             })
-        data.update({
-            "diskTraffic": disk_traffic
-        })
+            await insert_reading("diskTraffic/"+col_vals[0], time_stamp, disk_traffic)
 
         return data
 
+    async def insert_reading(asset, time_stamp, data):
+        data = {
+            'asset': "{}/{}".format(handle['assetCode']['value'], asset),
+            'timestamp': time_stamp,
+            'key': str(uuid.uuid4()),
+            'readings': data
+        }
+        await Ingest.add_readings(asset='{}'.format(data['asset']),
+                                  timestamp=data['timestamp'], key=data['key'],
+                                  readings=data['readings'])
     async def save_data():
         try:
             while True:
                 time_stamp = utils.local_timestamp()
-                data = {
-                    'asset': handle['assetCode']['value'],
-                    'timestamp': time_stamp,
-                    'key': str(uuid.uuid4()),
-                    'readings': {
-                        handle['assetCode']['value']: get_system_info()
-                    }
-                }
-                await Ingest.add_readings(asset='{}'.format(data['asset']),
-                                          timestamp=data['timestamp'], key=data['key'],
-                                          readings=data['readings'])
+                await get_system_info(time_stamp)
                 await asyncio.sleep(int(handle['sleepInterval']['value']))
         except OSError as ex:
             _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
