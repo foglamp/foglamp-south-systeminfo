@@ -183,12 +183,13 @@ def plugin_start(handle):
         platform = get_subprocess_result(cmd='cat /proc/version')[0]
         await insert_reading("platform", time_stamp, {"platform": platform})
 
-        # Get uptime, users
-        uptime = get_subprocess_result(cmd='uptime')[0]
-        uptime_info = uptime.split(',')[0]
-        uptime_user_start = uptime.find('user') - 3
-        await insert_reading("uptime", time_stamp, {"uptime": uptime_info.strip()})
-        await insert_reading("users", time_stamp, {"users": int(uptime[uptime_user_start:][:3].strip())})
+        # Get uptime
+        uptime_secs = get_subprocess_result(cmd='cat /proc/uptime')[0].split()
+        uptime = {
+                "system (seconds)": float(uptime_secs[0].strip()),
+                "idle processes (seconds)": float(uptime_secs[1].strip()),
+        }
+        await insert_reading("uptime", time_stamp, uptime)
 
         # Get load average
         line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
@@ -249,9 +250,9 @@ def plugin_start(handle):
             col_vals = line.split()
             disk_usage = {}
             disk_usage.update({
-                    col_heads[1]: int(col_vals[1]),
-                    col_heads[2]: int(col_vals[2]),
-                    col_heads[3]: int(col_vals[3]),
+                    col_heads[1]: int(col_vals[1].strip()),
+                    col_heads[2]: int(col_vals[2].strip()),
+                    col_heads[3]: int(col_vals[3].strip()),
                     col_heads[4]: int(col_vals[4].replace("%", "").strip()),
                     col_heads[5]: col_vals[5],
             })
@@ -267,7 +268,7 @@ def plugin_start(handle):
         for line in c6:
             if 'page' in line:
                 a_line = line.strip().split("pages")
-                paging_swapping.update({a_line[1].replace(' ', ''): int(a_line[0])})
+                paging_swapping.update({a_line[1].replace(' ', ''): int(a_line[0].strip())})
         await insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
 
         # Disk Traffic
@@ -278,19 +279,19 @@ def plugin_start(handle):
             col_vals = line.split()
             disk_traffic = {}
             disk_traffic.update({
-                    col_heads[1]: float(col_vals[1]),
-                    col_heads[2]: float(col_vals[2]),
-                    col_heads[3]: float(col_vals[3]),
-                    col_heads[4]: float(col_vals[4]),
-                    col_heads[5]: float(col_vals[5]),
-                    col_heads[6]: float(col_vals[6]),
-                    col_heads[7]: float(col_vals[7]),
-                    col_heads[8]: float(col_vals[8]),
-                    col_heads[9]: float(col_vals[9]),
-                    col_heads[10]: float(col_vals[10]),
-                    col_heads[11]: float(col_vals[11]),
-                    col_heads[12]: float(col_vals[12]),
-                    col_heads[13]: float(col_vals[13])
+                    col_heads[1]: float(col_vals[1].strip()),
+                    col_heads[2]: float(col_vals[2].strip()),
+                    col_heads[3]: float(col_vals[3].strip()),
+                    col_heads[4]: float(col_vals[4].strip()),
+                    col_heads[5]: float(col_vals[5].strip()),
+                    col_heads[6]: float(col_vals[6].strip()),
+                    col_heads[7]: float(col_vals[7].strip()),
+                    col_heads[8]: float(col_vals[8].strip()),
+                    col_heads[9]: float(col_vals[9].strip()),
+                    col_heads[10]: float(col_vals[10].strip()),
+                    col_heads[11]: float(col_vals[11].strip()),
+                    col_heads[12]: float(col_vals[12].strip()),
+                    col_heads[13]: float(col_vals[13].strip())
             })
             await insert_reading("diskTraffic/"+col_vals[0], time_stamp, disk_traffic)
 
