@@ -216,21 +216,12 @@ def plugin_start(handle):
         c3_mpstat = get_subprocess_result(cmd='mpstat')
         cpu_usage = {}
         col_heads = c3_mpstat[1].split()  # first line is the header row
+        start_index = col_heads.index("CPU") + 1
         for line in c3_mpstat[2:]:  # second line onwards are value rows
             col_vals = line.split()
-            cpu_usage.update({
-                    col_heads[3]: float(col_vals[3].strip()),
-                    col_heads[4]: float(col_vals[4].strip()),
-                    col_heads[5]: float(col_vals[5].strip()),
-                    col_heads[6]: float(col_vals[6].strip()),
-                    col_heads[7]: float(col_vals[7].strip()),
-                    col_heads[8]: float(col_vals[8].strip()),
-                    col_heads[9]: float(col_vals[9].strip()),
-                    col_heads[10]: float(col_vals[10].strip()),
-                    col_heads[11]: float(col_vals[11].strip()),
-                    col_heads[12]: float(col_vals[12].strip()),
-            })
-            await insert_reading("cpuUsage/"+col_vals[2], time_stamp, cpu_usage)
+            for i in range(start_index, len(col_vals)):
+                cpu_usage[col_heads[i]] = float(col_vals[i].strip())
+            await insert_reading("cpuUsage/"+col_vals[start_index-1], time_stamp, cpu_usage)
 
         # Get memory info
         c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
@@ -249,13 +240,8 @@ def plugin_start(handle):
         for line in c3[1:]:  # second line onwards are value rows
             col_vals = line.split()
             disk_usage = {}
-            disk_usage.update({
-                    col_heads[1]: int(col_vals[1].strip()),
-                    col_heads[2]: int(col_vals[2].strip()),
-                    col_heads[3]: int(col_vals[3].strip()),
-                    col_heads[4]: int(col_vals[4].replace("%", "").strip()),
-                    col_heads[5]: col_vals[5],
-            })
+            for i in range(1, len(col_vals)):
+                disk_usage[col_heads[i]] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
             dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
             await insert_reading("diskUsage/"+dev_key, time_stamp, disk_usage)
 
@@ -278,21 +264,8 @@ def plugin_start(handle):
         for line in c5[1:]:  # second line onwards are value rows
             col_vals = line.split()
             disk_traffic = {}
-            disk_traffic.update({
-                    col_heads[1]: float(col_vals[1].strip()),
-                    col_heads[2]: float(col_vals[2].strip()),
-                    col_heads[3]: float(col_vals[3].strip()),
-                    col_heads[4]: float(col_vals[4].strip()),
-                    col_heads[5]: float(col_vals[5].strip()),
-                    col_heads[6]: float(col_vals[6].strip()),
-                    col_heads[7]: float(col_vals[7].strip()),
-                    col_heads[8]: float(col_vals[8].strip()),
-                    col_heads[9]: float(col_vals[9].strip()),
-                    col_heads[10]: float(col_vals[10].strip()),
-                    col_heads[11]: float(col_vals[11].strip()),
-                    col_heads[12]: float(col_vals[12].strip()),
-                    col_heads[13]: float(col_vals[13].strip())
-            })
+            for i in range(1, len(col_vals)):
+                disk_traffic[col_heads[i]] = float(col_vals[i].strip())
             await insert_reading("diskTraffic/"+col_vals[0], time_stamp, disk_traffic)
 
         return data
