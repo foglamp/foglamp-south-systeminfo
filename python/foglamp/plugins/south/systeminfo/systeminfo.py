@@ -229,7 +229,7 @@ def plugin_start(handle):
         for line in c3_mem:
             line_a = line.split(':')
             line_vals = line_a[1].split()
-            k = "{} {}".format(line_a[0], 'KB' if len(line_vals) > 1 else '').strip()
+            k = "{}{}".format(line_a[0], '_KB' if len(line_vals) > 1 else '').replace("(","").replace(")","").strip()
             v = int(line_vals[0].strip())
             mem_info.update({k : v})
         await insert_reading("memInfo", time_stamp, mem_info)
