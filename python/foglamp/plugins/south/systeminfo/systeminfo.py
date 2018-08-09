@@ -186,8 +186,8 @@ def plugin_start(handle):
         # Get uptime
         uptime_secs = get_subprocess_result(cmd='cat /proc/uptime')[0].split()
         uptime = {
-                "system (seconds)": float(uptime_secs[0].strip()),
-                "idle processes (seconds)": float(uptime_secs[1].strip()),
+                "system_seconds": float(uptime_secs[0].strip()),
+                "idle_processes_seconds": float(uptime_secs[1].strip()),
         }
         await insert_reading("uptime", time_stamp, uptime)
 
@@ -220,7 +220,7 @@ def plugin_start(handle):
         for line in c3_mpstat[2:]:  # second line onwards are value rows
             col_vals = line.split()
             for i in range(start_index, len(col_vals)):
-                cpu_usage[col_heads[i]] = float(col_vals[i].strip())
+                cpu_usage[col_heads[i].replace("%", "prcntg_")] = float(col_vals[i].strip())
             await insert_reading("cpuUsage/"+col_vals[start_index-1], time_stamp, cpu_usage)
 
         # Get memory info
@@ -241,7 +241,7 @@ def plugin_start(handle):
             col_vals = line.split()
             disk_usage = {}
             for i in range(1, len(col_vals)):
-                disk_usage[col_heads[i]] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
+                disk_usage[col_heads[i].replace("%", "_prcntg")] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
             dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
             await insert_reading("diskUsage/"+dev_key, time_stamp, disk_usage)
 
@@ -265,7 +265,7 @@ def plugin_start(handle):
             col_vals = line.split()
             disk_traffic = {}
             for i in range(1, len(col_vals)):
-                disk_traffic[col_heads[i]] = float(col_vals[i].strip())
+                disk_traffic[col_heads[i].replace("%", "prcntg_").replace("/s", "_per_sec")] = float(col_vals[i].strip())
             await insert_reading("diskTraffic/"+col_vals[0], time_stamp, disk_traffic)
 
         return data
