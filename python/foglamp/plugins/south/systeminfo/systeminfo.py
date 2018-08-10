@@ -235,7 +235,7 @@ def plugin_start(handle):
         await insert_reading("memInfo", time_stamp, mem_info)
 
         # Get disk usage
-        c3 = get_subprocess_result(cmd='df')
+        c3 = get_subprocess_result(cmd='df -l')
         col_heads = c3[0].split()  # first line is the header row
         for line in c3[1:]:  # second line onwards are value rows
             col_vals = line.split()
