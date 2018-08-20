@@ -33,8 +33,8 @@ _DEFAULT_CONFIG = {
         'type': 'string',
         'default': 'systeminfo'
     },
-    'assetCode': {
-        'description': 'Asset Code',
+    'assetPrefix': {
+        'description': 'Asset prefix',
         'type': 'string',
         'default': "system"
     },
@@ -159,7 +159,7 @@ def plugin_start(handle):
                     "PacketsSent": network_calc[interface_name]["bytes_sent_after"] -
                                           network_calc[interface_name]["bytes_sent_before"],
             }
-            await insert_reading("networkTraffic/"+interface_name, time_stamp, network_traffic)
+            await insert_reading("networkTraffic_"+interface_name, time_stamp, network_traffic)
 
         return network_traffic
 
@@ -221,7 +221,7 @@ def plugin_start(handle):
             col_vals = line.split()
             for i in range(start_index, len(col_vals)):
                 cpu_usage[col_heads[i].replace("%", "prcntg_")] = float(col_vals[i].strip())
-            await insert_reading("cpuUsage/"+col_vals[start_index-1], time_stamp, cpu_usage)
+            await insert_reading("cpuUsage_"+col_vals[start_index-1], time_stamp, cpu_usage)
 
         # Get memory info
         c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
@@ -243,7 +243,7 @@ def plugin_start(handle):
             for i in range(1, len(col_vals)):
                 disk_usage[col_heads[i].replace("%", "_prcntg")] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
             dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
-            await insert_reading("diskUsage/"+dev_key, time_stamp, disk_usage)
+            await insert_reading("diskUsage_"+dev_key, time_stamp, disk_usage)
 
         # Get Network and other info
         await get_network_traffic(time_stamp)
@@ -266,13 +266,13 @@ def plugin_start(handle):
             disk_traffic = {}
             for i in range(1, len(col_vals)):
                 disk_traffic[col_heads[i].replace("%", "prcntg_").replace("/s", "_per_sec")] = float(col_vals[i].strip())
-            await insert_reading("diskTraffic/"+col_vals[0], time_stamp, disk_traffic)
+            await insert_reading("diskTraffic_"+col_vals[0], time_stamp, disk_traffic)
 
         return data
 
     async def insert_reading(asset, time_stamp, data):
         data = {
-            'asset': "{}/{}".format(handle['assetCode']['value'], asset),
+            'asset': "{}_{}".format(handle['assetPrefix']['value'], asset).replace('/', '_'),
             'timestamp': time_stamp,
             'key': str(uuid.uuid4()),
             'readings': data
@@ -316,7 +316,7 @@ def plugin_reconfigure(handle, new_config):
     diff = utils.get_diff(handle, new_config)
 
     # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetCode' in diff or 'networkSnifferPeriod' in diff:
+    if 'sleepInterval' in diff or 'assetPrefix' in diff or 'networkSnifferPeriod' in diff:
         new_handle = plugin_init(new_config)
         new_handle['restart'] = 'yes'
         _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
