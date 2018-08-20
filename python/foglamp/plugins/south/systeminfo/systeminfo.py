@@ -49,6 +49,7 @@ _DEFAULT_CONFIG = {
         'default': "2"
     }
 }
+_task = None
 _LOGGER = logger.setup(__name__, level=logger.logging.INFO)
 
 
@@ -94,6 +95,8 @@ def plugin_start(handle):
     Raises:
         TimeoutError
     """
+    global _task
+
     async def get_network_traffic(time_stamp):
         def get_all_network_interfaces():
             """ Get all network interfaces in a list of tuple interface name, interface ip.
@@ -294,8 +297,10 @@ def plugin_start(handle):
             _LOGGER.exception("System Info exception: {}".format(str(ex)))
             raise exceptions.DataRetrievalError(ex)
 
-    asyncio.ensure_future(save_data())
-
+    try:
+        _task = asyncio.ensure_future(save_data())
+    except asyncio.CancelledError:
+        _task.cancel()
 
 def plugin_reconfigure(handle, new_config):
     """ Reconfigures the plugin
@@ -333,4 +338,9 @@ def plugin_shutdown(handle):
         handle: handle returned by the plugin initialisation call
     Returns:
     """
+    global _task
+    if _task is not None:
+        _task.cancel()
+        _task = None
+
     _LOGGER.info('system info plugin shut down.')
