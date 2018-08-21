@@ -97,75 +97,6 @@ def plugin_start(handle):
     """
     global _task
 
-    async def get_network_traffic(time_stamp):
-        def get_all_network_interfaces():
-            """ Get all network interfaces in a list of tuple interface name, interface ip.
-                This code was create with help from http://code.activestate.com/recipes/439093/#c8
-            """
-            is_64bits = sys.maxsize > 2 ** 32
-            struct_size = 40 if is_64bits else 32
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            max_possible = 8  # initial value
-            while True:
-                _bytes = max_possible * struct_size
-                names = array.array('B')
-                for i in range(0, _bytes):
-                    names.append(0)
-                outbytes = struct.unpack('iL', fcntl.ioctl(
-                    s.fileno(),
-                    0x8912,  # SIOCGIFCONF
-                    struct.pack('iL', _bytes, names.buffer_info()[0])
-                ))[0]
-                if outbytes == _bytes:
-                    max_possible *= 2
-                else:
-                    break
-            namestr = names.tostring()
-            ifaces = []
-            for i in range(0, outbytes, struct_size):
-                iface_name = bytes.decode(namestr[i:i + 16]).split('\0', 1)[0]
-                iface_addr = socket.inet_ntoa(namestr[i + 20:i + 24])
-                ifaces.append((iface_name, iface_addr))
-
-            return ifaces
-
-        def interface_transmission(dev, direction):
-            """Return the transmisson rate of a interface under linux
-            https://stackoverflow.com/a/41448191
-            """
-            path = "/sys/class/net/{}/statistics/{}_bytes".format(dev, direction)
-            f = open(path, "r")
-            bytes_collected = int(f.read())
-            f.close()
-            return bytes_collected
-
-        network_interfaces = get_all_network_interfaces()
-        network_traffic = {}
-        network_calc = {}
-        for interface_name, interface_ip in network_interfaces:
-            network_calc[interface_name] = {}
-            network_calc[interface_name]["bytes_recd_before"] = interface_transmission(interface_name, "rx")
-            network_calc[interface_name]["bytes_sent_before"] = interface_transmission(interface_name, "tx")
-
-        timestep = int(handle['networkSnifferPeriod']['value'])  # seconds
-        time.sleep(timestep)
-
-        for interface_name, interface_ip in network_interfaces:
-            network_calc[interface_name]["bytes_recd_after"] = interface_transmission(interface_name, "rx")
-            network_calc[interface_name]["bytes_sent_after"] = interface_transmission(interface_name, "tx")
-
-        for interface_name, interface_ip in network_interfaces:
-            network_traffic = {
-                    "IP": interface_ip,
-                    "PacketsReceived": network_calc[interface_name]["bytes_recd_after"] -
-                                              network_calc[interface_name]["bytes_recd_before"],
-                    "PacketsSent": network_calc[interface_name]["bytes_sent_after"] -
-                                          network_calc[interface_name]["bytes_sent_before"],
-            }
-            await insert_reading("networkTraffic_"+interface_name, time_stamp, network_traffic)
-
-        return network_traffic
-
     def get_subprocess_result(cmd):
         a = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         outs, errs = a.communicate()
@@ -238,7 +169,14 @@ def plugin_start(handle):
         await insert_reading("memInfo", time_stamp, mem_info)
 
         # Get disk usage
-        c3 = get_subprocess_result(cmd='df -l')
+        c3_all = get_subprocess_result(cmd='df -l')
+
+        # On some systems, errors are reported by df command, hence we need to filter those lines first
+        c3_temp1 = get_subprocess_result(cmd='df -l | grep -n Filesystem')
+        c3_temp2 = c3_temp1[0].split("Filesystem")
+        c3_start = int(c3_temp2[0].strip().replace(":", "")) - 1
+        c3 = c3_all[c3_start:]
+
         col_heads = c3[0].split()  # first line is the header row
         for line in c3[1:]:  # second line onwards are value rows
             col_vals = line.split()
@@ -249,7 +187,18 @@ def plugin_start(handle):
             await insert_reading("diskUsage_"+dev_key, time_stamp, disk_usage)
 
         # Get Network and other info
-        await get_network_traffic(time_stamp)
+        c3_net = get_subprocess_result(cmd='cat /proc/net/dev')
+        col_heads = c3_net[1].replace("|", " ").split()
+        for i in range(len(col_heads)):
+            col_heads[i] = "{}_{}".format("Receive" if i <= 8 else "Transmit", col_heads[i].strip())
+        col_heads[0] = "Interface"
+        for line in c3_net[2:]:
+            line_a = line.replace(":", " ").split()
+            interface_name = line_a[0].strip()
+            net_info = {}
+            for i in range(1, len(line_a)):
+                net_info.update({col_heads[i]: line_a[i]})
+            await insert_reading("networkTraffic_"+interface_name, time_stamp, net_info)
 
         # Paging and Swapping
         c6 = get_subprocess_result(cmd='vmstat -s')
