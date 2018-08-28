@@ -228,7 +228,7 @@ def plugin_start(handle):
 
     async def insert_reading(asset, time_stamp, data):
         data = {
-            'asset': "{}_{}".format(handle['assetNamePrefix']['value'], asset).replace('/', '_'),
+            'asset': "{}/{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
             'key': str(uuid.uuid4()),
             'readings': data
