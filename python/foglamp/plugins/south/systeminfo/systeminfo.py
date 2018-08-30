@@ -31,22 +31,26 @@ _DEFAULT_CONFIG = {
     'plugin': {
         'description': 'System info async plugin',
         'type': 'string',
-        'default': 'systeminfo'
+        'default': 'systeminfo',
+        'readonly': 'true'
     },
-    'assetPrefix': {
+    'assetNamePrefix': {
         'description': 'Asset prefix',
         'type': 'string',
-        'default': "system"
+        'default': "system/",
+        'order': "1"
     },
     'sleepInterval': {
         'description': 'Sleep Interval, in seconds, between two System info gathering',
         'type': 'integer',
-        'default': "30"
+        'default': "30",
+        'order': "2"
     },
     'networkSnifferPeriod': {
         'description': 'Interval, in seconds, for which network traffic is measured',
         'type': 'integer',
-        'default': "2"
+        'default': "2",
+        'order': "3"
     }
 }
 _task = None
@@ -224,7 +228,7 @@ def plugin_start(handle):
 
     async def insert_reading(asset, time_stamp, data):
         data = {
-            'asset': "{}_{}".format(handle['assetPrefix']['value'], asset).replace('/', '_'),
+            'asset': "{}{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
             'key': str(uuid.uuid4()),
             'readings': data
@@ -270,7 +274,8 @@ def plugin_reconfigure(handle, new_config):
     diff = utils.get_diff(handle, new_config)
 
     # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetPrefix' in diff or 'networkSnifferPeriod' in diff:
+    if 'sleepInterval' in diff or 'assetNamePrefix' in diff or 'networkSnifferPeriod' in diff:
+        plugin_shutdown(handle)
         new_handle = plugin_init(new_config)
         new_handle['restart'] = 'yes'
         _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
