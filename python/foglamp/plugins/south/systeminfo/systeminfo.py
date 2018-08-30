@@ -37,7 +37,7 @@ _DEFAULT_CONFIG = {
     'assetNamePrefix': {
         'description': 'Asset prefix',
         'type': 'string',
-        'default': "system",
+        'default': "system/",
         'order': "1"
     },
     'sleepInterval': {
@@ -228,7 +228,7 @@ def plugin_start(handle):
 
     async def insert_reading(asset, time_stamp, data):
         data = {
-            'asset': "{}/{}".format(handle['assetNamePrefix']['value'], asset),
+            'asset': "{}{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
             'key': str(uuid.uuid4()),
             'readings': data
