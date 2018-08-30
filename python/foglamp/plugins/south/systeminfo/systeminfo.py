@@ -6,21 +6,13 @@
 
 """ Module for System Info async plugin """
 
-import time
-import asyncio
 import copy
 import uuid
-import sys
 import subprocess
-import socket
-import fcntl
-import struct
-import array
 
 from foglamp.common import logger
 from foglamp.plugins.common import utils
 from foglamp.services.south import exceptions
-from foglamp.services.south.ingest import Ingest
 
 __author__ = "Amarendra K Sinha"
 __copyright__ = "Copyright (c) 2018 Dianomic Systems"
@@ -111,7 +103,7 @@ def plugin_poll(handle):
         d = [b for b in outs.decode('utf-8').split('\n') if b != '']
         return d
 
-    def insert_reading(asset, time_stamp, reading):
+    def insert_reading(asset, reading):
         data.append({
             'asset': "{}{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
@@ -122,11 +114,11 @@ def plugin_poll(handle):
     try:
         # Get hostname
         hostname = get_subprocess_result(cmd='hostname')[0]
-        insert_reading("hostName", time_stamp, {"hostName": hostname})
+        insert_reading("hostName", {"hostName": hostname})
 
         # Get platform info
         platform = get_subprocess_result(cmd='cat /proc/version')[0]
-        insert_reading("platform", time_stamp, {"platform": platform})
+        insert_reading("platform", {"platform": platform})
 
         # Get uptime
         uptime_secs = get_subprocess_result(cmd='cat /proc/uptime')[0].split()
@@ -134,16 +126,16 @@ def plugin_poll(handle):
                 "system_seconds": float(uptime_secs[0].strip()),
                 "idle_processes_seconds": float(uptime_secs[1].strip()),
         }
-        insert_reading("uptime", time_stamp, uptime)
+        insert_reading("uptime", uptime)
 
         # Get load average
         line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
         load_average = {
-                "overLast1min": float(line_load[0].strip()),
-                "overLast5mins": float(line_load[1].strip()),
-                "overLast15mins": float(line_load[2].strip())
+                "last1min": float(line_load[0].strip()),
+                "last5mins": float(line_load[1].strip()),
+                "last15mins": float(line_load[2].strip())
         }
-        insert_reading("loadAverage", time_stamp, load_average)
+        insert_reading("loadAverage", load_average)
 
         # Get processes count
         tasks_states = get_subprocess_result(cmd="ps -e -o state")
@@ -155,7 +147,7 @@ def plugin_poll(handle):
                 "dead": tasks_states.count("X"),
                 "zombie": tasks_states.count("Z")
             }
-        insert_reading("processes", time_stamp, processes)
+        insert_reading("processes", processes)
 
         # Get CPU usage
         c3_mpstat = get_subprocess_result(cmd='mpstat')
@@ -165,8 +157,9 @@ def plugin_poll(handle):
         for line in c3_mpstat[2:]:  # second line onwards are value rows
             col_vals = line.split()
             for i in range(start_index, len(col_vals)):
-                cpu_usage[col_heads[i].replace("%", "prcntg_")] = float(col_vals[i].strip())
-            insert_reading("cpuUsage_"+col_vals[start_index-1], time_stamp, cpu_usage)
+                # .replace("%", "prcntg_")
+                cpu_usage[col_heads[i]] = float(col_vals[i].strip())
+            insert_reading("cpuUsage_"+col_vals[start_index-1], cpu_usage)
 
         # Get memory info
         c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
@@ -177,7 +170,7 @@ def plugin_poll(handle):
             k = "{}{}".format(line_a[0], '_KB' if len(line_vals) > 1 else '').replace("(","").replace(")","").strip()
             v = int(line_vals[0].strip())
             mem_info.update({k : v})
-        insert_reading("memInfo", time_stamp, mem_info)
+        insert_reading("memInfo", mem_info)
 
         # Get disk usage
         c3_all = get_subprocess_result(cmd='df -l')
@@ -193,9 +186,10 @@ def plugin_poll(handle):
             col_vals = line.split()
             disk_usage = {}
             for i in range(1, len(col_vals)):
-                disk_usage[col_heads[i].replace("%", "_prcntg")] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
+                # .replace("%", "_prcntg")
+                disk_usage[col_heads[i]] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
             dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
-            insert_reading("diskUsage_"+dev_key, time_stamp, disk_usage)
+            insert_reading("diskUsage_"+dev_key, disk_usage)
 
         # Get Network and other info
         c3_net = get_subprocess_result(cmd='cat /proc/net/dev')
@@ -209,7 +203,7 @@ def plugin_poll(handle):
             net_info = {}
             for i in range(1, len(line_a)):
                 net_info.update({col_heads[i]: line_a[i]})
-            insert_reading("networkTraffic_"+interface_name, time_stamp, net_info)
+            insert_reading("networkTraffic_"+interface_name, net_info)
 
         # Paging and Swapping
         c6 = get_subprocess_result(cmd='vmstat -s')
@@ -218,7 +212,7 @@ def plugin_poll(handle):
             if 'page' in line:
                 a_line = line.strip().split("pages")
                 paging_swapping.update({a_line[1].replace(' ', ''): int(a_line[0].strip())})
-        insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
+        insert_reading("pagingAndSwappingEvents", paging_swapping)
 
         # Disk Traffic
         c4 = get_subprocess_result(cmd='iostat -xd 2 1')
@@ -228,8 +222,9 @@ def plugin_poll(handle):
             col_vals = line.split()
             disk_traffic = {}
             for i in range(1, len(col_vals)):
-                disk_traffic[col_heads[i].replace("%", "prcntg_").replace("/s", "_per_sec")] = float(col_vals[i].strip())
-            insert_reading("diskTraffic_"+col_vals[0], time_stamp, disk_traffic)
+                # .replace("%", "prcntg_")
+                disk_traffic[col_heads[i].replace("/s", "_per_sec")] = float(col_vals[i].strip())
+            insert_reading("diskTraffic_"+col_vals[0], disk_traffic)
 
         return data
 
