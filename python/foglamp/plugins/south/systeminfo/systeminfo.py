@@ -35,22 +35,25 @@ _DEFAULT_CONFIG = {
         'readonly': 'true'
     },
     'assetNamePrefix': {
-        'description': 'Asset prefix',
+        'description': 'Asset name prefix',
         'type': 'string',
         'default': "system/",
-        'order': "1"
+        'order': "1",
+        'displayName': 'Asset Name Prefix'
     },
     'sleepInterval': {
         'description': 'Sleep Interval, in seconds, between two System info gathering',
         'type': 'integer',
         'default': "30",
-        'order': "2"
+        'order': "2",
+        'displayName': 'Sleep Interval'
     },
     'networkSnifferPeriod': {
         'description': 'Interval, in seconds, for which network traffic is measured',
         'type': 'integer',
         'default': "2",
-        'order': "3"
+        'order': "3",
+        'displayName': 'Network Sniffer Period'
     }
 }
 _task = None
