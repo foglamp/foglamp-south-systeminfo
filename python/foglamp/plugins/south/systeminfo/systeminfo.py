@@ -6,21 +6,14 @@
 
 """ Module for System Info async plugin """
 
-import time
-import asyncio
 import copy
 import uuid
-import sys
 import subprocess
-import socket
-import fcntl
-import struct
-import array
+import asyncio
 
 from foglamp.common import logger
 from foglamp.plugins.common import utils
 from foglamp.services.south import exceptions
-from foglamp.services.south.ingest import Ingest
 
 __author__ = "Amarendra K Sinha"
 __copyright__ = "Copyright (c) 2018 Dianomic Systems"
@@ -35,28 +28,13 @@ _DEFAULT_CONFIG = {
         'readonly': 'true'
     },
     'assetNamePrefix': {
-        'description': 'Asset name prefix',
+        'description': 'Asset prefix',
         'type': 'string',
         'default': "system/",
         'order': "1",
         'displayName': 'Asset Name Prefix'
     },
-    'sleepInterval': {
-        'description': 'Sleep Interval, in seconds, between two System info gathering',
-        'type': 'integer',
-        'default': "30",
-        'order': "2",
-        'displayName': 'Sleep Interval'
-    },
-    'networkSnifferPeriod': {
-        'description': 'Interval, in seconds, for which network traffic is measured',
-        'type': 'integer',
-        'default': "2",
-        'order': "3",
-        'displayName': 'Network Sniffer Period'
-    }
 }
-_task = None
 _LOGGER = logger.setup(__name__, level=logger.logging.INFO)
 
 
@@ -70,8 +48,8 @@ def plugin_info():
 
     return {
         'name': 'System Info plugin',
-        'version': '1.0',
-        'mode': 'async',
+        'version': '2.0.0',
+        'mode': 'poll',
         'type': 'south',
         'interface': '1.0',
         'config': _DEFAULT_CONFIG
@@ -90,7 +68,7 @@ def plugin_init(config):
     return data
 
 
-def plugin_start(handle):
+def plugin_poll(handle):
     """ Extracts data from the system info and returns it in a JSON document as a Python dict.
     Available for async mode only.
 
@@ -102,7 +80,7 @@ def plugin_start(handle):
     Raises:
         TimeoutError
     """
-    global _task
+    readings = []
 
     def get_subprocess_result(cmd):
         a = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -113,16 +91,16 @@ def plugin_start(handle):
         d = [b for b in outs.decode('utf-8').split('\n') if b != '']
         return d
 
-    async def get_system_info(time_stamp):
+    def get_system_info(time_stamp):
         data = {}
 
         # Get hostname
         hostname = get_subprocess_result(cmd='hostname')[0]
-        await insert_reading("hostName", time_stamp, {"hostName": hostname})
+        insert_reading("hostName", time_stamp, {"hostName": hostname})
 
         # Get platform info
         platform = get_subprocess_result(cmd='cat /proc/version')[0]
-        await insert_reading("platform", time_stamp, {"platform": platform})
+        insert_reading("platform", time_stamp, {"platform": platform})
 
         # Get uptime
         uptime_secs = get_subprocess_result(cmd='cat /proc/uptime')[0].split()
@@ -130,7 +108,7 @@ def plugin_start(handle):
                 "system_seconds": float(uptime_secs[0].strip()),
                 "idle_processes_seconds": float(uptime_secs[1].strip()),
         }
-        await insert_reading("uptime", time_stamp, uptime)
+        insert_reading("uptime", time_stamp, uptime)
 
         # Get load average
         line_load = get_subprocess_result(cmd='cat /proc/loadavg')[0].split()
@@ -139,7 +117,7 @@ def plugin_start(handle):
                 "overLast5mins": float(line_load[1].strip()),
                 "overLast15mins": float(line_load[2].strip())
         }
-        await insert_reading("loadAverage", time_stamp, load_average)
+        insert_reading("loadAverage", time_stamp, load_average)
 
         # Get processes count
         tasks_states = get_subprocess_result(cmd="ps -e -o state")
@@ -151,7 +129,7 @@ def plugin_start(handle):
                 "dead": tasks_states.count("X"),
                 "zombie": tasks_states.count("Z")
             }
-        await insert_reading("processes", time_stamp, processes)
+        insert_reading("processes", time_stamp, processes)
 
         # Get CPU usage
         c3_mpstat = get_subprocess_result(cmd='mpstat')
@@ -162,7 +140,7 @@ def plugin_start(handle):
             col_vals = line.split()
             for i in range(start_index, len(col_vals)):
                 cpu_usage[col_heads[i].replace("%", "prcntg_")] = float(col_vals[i].strip())
-            await insert_reading("cpuUsage_"+col_vals[start_index-1], time_stamp, cpu_usage)
+            insert_reading("cpuUsage_"+col_vals[start_index-1], time_stamp, cpu_usage)
 
         # Get memory info
         c3_mem = get_subprocess_result(cmd='cat /proc/meminfo')
@@ -173,7 +151,7 @@ def plugin_start(handle):
             k = "{}{}".format(line_a[0], '_KB' if len(line_vals) > 1 else '').replace("(","").replace(")","").strip()
             v = int(line_vals[0].strip())
             mem_info.update({k : v})
-        await insert_reading("memInfo", time_stamp, mem_info)
+        insert_reading("memInfo", time_stamp, mem_info)
 
         # Get disk usage
         c3_all = get_subprocess_result(cmd='df -l')
@@ -191,7 +169,7 @@ def plugin_start(handle):
             for i in range(1, len(col_vals)):
                 disk_usage[col_heads[i].replace("%", "_prcntg")] = int(col_vals[i].replace("%", "").strip()) if i < len(col_vals)-1 else col_vals[i]
             dev_key = (col_vals[0])[1:] if col_vals[0].startswith('/') else col_vals[0]  # remove starting / from /dev/sda5 etc
-            await insert_reading("diskUsage_"+dev_key, time_stamp, disk_usage)
+            insert_reading("diskUsage_"+dev_key, time_stamp, disk_usage)
 
         # Get Network and other info
         c3_net = get_subprocess_result(cmd='cat /proc/net/dev')
@@ -205,7 +183,7 @@ def plugin_start(handle):
             net_info = {}
             for i in range(1, len(line_a)):
                 net_info.update({col_heads[i]: line_a[i]})
-            await insert_reading("networkTraffic_"+interface_name, time_stamp, net_info)
+            insert_reading("networkTraffic_"+interface_name, time_stamp, net_info)
 
         # Paging and Swapping
         c6 = get_subprocess_result(cmd='vmstat -s')
@@ -214,7 +192,7 @@ def plugin_start(handle):
             if 'page' in line:
                 a_line = line.strip().split("pages")
                 paging_swapping.update({a_line[1].replace(' ', ''): int(a_line[0].strip())})
-        await insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
+        insert_reading("pagingAndSwappingEvents", time_stamp, paging_swapping)
 
         # Disk Traffic
         c4 = get_subprocess_result(cmd='iostat -xd 2 1')
@@ -225,38 +203,30 @@ def plugin_start(handle):
             disk_traffic = {}
             for i in range(1, len(col_vals)):
                 disk_traffic[col_heads[i].replace("%", "prcntg_").replace("/s", "_per_sec")] = float(col_vals[i].strip())
-            await insert_reading("diskTraffic_"+col_vals[0], time_stamp, disk_traffic)
+            insert_reading("diskTraffic_"+col_vals[0], time_stamp, disk_traffic)
 
         return data
 
-    async def insert_reading(asset, time_stamp, data):
+    def insert_reading(asset, time_stamp, data):
         data = {
             'asset': "{}{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
             'key': str(uuid.uuid4()),
             'readings': data
         }
-        await Ingest.add_readings(asset='{}'.format(data['asset']),
-                                  timestamp=data['timestamp'], key=data['key'],
-                                  readings=data['readings'])
-    async def save_data():
-        try:
-            while True:
-                time_stamp = utils.local_timestamp()
-                await get_system_info(time_stamp)
-                await asyncio.sleep(int(handle['sleepInterval']['value']))
-        except OSError as ex:
-            _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
-        except asyncio.CancelledError:
-            pass
-        except (Exception, RuntimeError) as ex:
-            _LOGGER.exception("System Info exception: {}".format(str(ex)))
-            raise exceptions.DataRetrievalError(ex)
-
+        readings.append(data)
     try:
-        _task = asyncio.ensure_future(save_data())
-    except asyncio.CancelledError:
-        _task.cancel()
+        time_stamp = utils.local_timestamp()
+        get_system_info(time_stamp)
+    except asyncio.CancelledError :
+        pass
+    except OSError as ex:
+        _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
+    except (Exception, RuntimeError) as ex:
+        _LOGGER.exception("System Info exception: {}".format(str(ex)))
+        raise exceptions.DataRetrievalError(ex)
+    return readings
+
 
 def plugin_reconfigure(handle, new_config):
     """ Reconfigures the plugin
@@ -272,19 +242,7 @@ def plugin_reconfigure(handle, new_config):
     Raises:
     """
     _LOGGER.info("Old config for systeminfo plugin {} \n new config {}".format(handle, new_config))
-
-    # Find diff between old config and new config
-    diff = utils.get_diff(handle, new_config)
-
-    # Plugin should re-initialize and restart if key configuration is changed
-    if 'sleepInterval' in diff or 'assetNamePrefix' in diff or 'networkSnifferPeriod' in diff:
-        plugin_shutdown(handle)
-        new_handle = plugin_init(new_config)
-        new_handle['restart'] = 'yes'
-        _LOGGER.info("Restarting systeminfo plugin due to change in configuration keys [{}]".format(', '.join(diff)))
-    else:
-        new_handle = copy.deepcopy(new_config)
-        new_handle['restart'] = 'no'
+    new_handle = copy.deepcopy(new_config)
     return new_handle
 
 
@@ -295,9 +253,4 @@ def plugin_shutdown(handle):
         handle: handle returned by the plugin initialisation call
     Returns:
     """
-    global _task
-    if _task is not None:
-        _task.cancel()
-        _task = None
-
     _LOGGER.info('system info plugin shut down.')
