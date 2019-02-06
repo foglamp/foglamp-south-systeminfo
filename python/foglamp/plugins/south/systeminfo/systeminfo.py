@@ -31,7 +31,8 @@ _DEFAULT_CONFIG = {
         'description': 'Asset prefix',
         'type': 'string',
         'default': "system/",
-        'order': "1"
+        'order': "1",
+        'displayName': 'Asset Name Prefix'
     },
 }
 _LOGGER = logger.setup(__name__, level=logger.logging.INFO)
