@@ -20,7 +20,7 @@ def test_plugin_contract():
     # Evaluates if the plugin has all the required methods
     assert callable(getattr(systeminfo, 'plugin_info'))
     assert callable(getattr(systeminfo, 'plugin_init'))
-    assert callable(getattr(systeminfo, 'plugin_start'))
+    assert callable(getattr(systeminfo, 'plugin_poll'))
     assert callable(getattr(systeminfo, 'plugin_shutdown'))
     assert callable(getattr(systeminfo, 'plugin_reconfigure'))
 
@@ -28,8 +28,8 @@ def test_plugin_contract():
 def test_plugin_info():
     assert systeminfo.plugin_info() == {
         'name': 'System Info plugin',
-        'version': '1.0',
-        'mode': 'async',
+        'version': '1.5.0',
+        'mode': 'poll',
         'type': 'south',
         'interface': '1.0',
         'config': config
@@ -41,7 +41,7 @@ def test_plugin_init():
 
 
 @pytest.mark.skip(reason="To be implemented")
-def test_plugin_start():
+def test_plugin_poll():
     pass
 
 
