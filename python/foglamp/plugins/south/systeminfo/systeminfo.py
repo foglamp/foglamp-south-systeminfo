@@ -216,9 +216,7 @@ def plugin_poll(handle):
     try:
         time_stamp = utils.local_timestamp()
         get_system_info(time_stamp)
-    except OSError as ex:
-        _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
-    except (Exception, RuntimeError) as ex:
+    except (OSError, Exception, RuntimeError) as ex:
         _LOGGER.exception("System Info exception: {}".format(str(ex)))
         raise ex
     return readings
