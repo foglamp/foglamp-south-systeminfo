@@ -9,11 +9,9 @@
 import copy
 import uuid
 import subprocess
-import asyncio
 
 from foglamp.common import logger
 from foglamp.plugins.common import utils
-from foglamp.services.south import exceptions
 
 __author__ = "Amarendra K Sinha"
 __copyright__ = "Copyright (c) 2018 Dianomic Systems"
@@ -218,13 +216,9 @@ def plugin_poll(handle):
     try:
         time_stamp = utils.local_timestamp()
         get_system_info(time_stamp)
-    except asyncio.CancelledError :
-        pass
-    except OSError as ex:
-        _LOGGER.exception("Encountered System Error: {}".format(str(ex)))
-    except (Exception, RuntimeError) as ex:
+    except (OSError, Exception, RuntimeError) as ex:
         _LOGGER.exception("System Info exception: {}".format(str(ex)))
-        raise exceptions.DataRetrievalError(ex)
+        raise ex
     return readings
 
 
