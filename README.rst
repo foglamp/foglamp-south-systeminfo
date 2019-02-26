@@ -2,7 +2,7 @@
 foglamp-south-systeminfo
 ========================
 
-FogLAMP South Plugin for systeminfo. `read more <https://github.com/foglamp/foglamp-south-systeminfo/blob/master/python/foglamp/plugins/south/systeminfo/readme.rst>`_
+FogLAMP South Plugin for systeminfo. `read more <python/foglamp/plugins/south/systeminfo/readme.rst>`_
 
 
 *************************
