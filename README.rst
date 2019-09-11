@@ -1,5 +1,5 @@
 ========================
-foglamp-south-systeminfo
+fledge-south-systeminfo
 ========================
 
-FogLAMP South Plugin for systeminfo. `read more <python/foglamp/plugins/south/systeminfo/readme.rst>`_
+Fledge South Plugin for systeminfo. `read more <python/fledge/plugins/south/systeminfo/readme.rst>`_
