@@ -7,7 +7,6 @@
 """ Module for System Info async plugin """
 
 import copy
-import uuid
 import subprocess
 
 from foglamp.common import logger
@@ -209,7 +208,6 @@ def plugin_poll(handle):
         data = {
             'asset': "{}{}".format(handle['assetNamePrefix']['value'], asset),
             'timestamp': time_stamp,
-            'key': str(uuid.uuid4()),
             'readings': data
         }
         readings.append(data)
